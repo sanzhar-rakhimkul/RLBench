@@ -114,7 +114,10 @@ class Task(object):
 
     def reward(self) -> float:
         """Allows the user to customise the task and add reward shaping."""
-        return 0.0
+        reward = 0.0
+        if self.name == "reach_target":
+            reward = -((self.target.get_position() - self.robot.gripper.get_position())**2).mean()
+        return reward
 
     def cleanup(self) -> None:
         """Called at the end of the episode. Can usually be left.
