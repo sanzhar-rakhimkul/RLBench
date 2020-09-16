@@ -116,7 +116,7 @@ class Task(object):
         """Allows the user to customise the task and add reward shaping."""
         reward = 0.0
         if self.name == "reach_target":
-            reward = -((self.target.get_position() - self.robot.gripper.get_position())**2).mean()
+            reward = -np.linalg.norm(self.target.get_position() - self.robot.gripper.get_position(), ord=2)
         return reward
 
     def cleanup(self) -> None:
