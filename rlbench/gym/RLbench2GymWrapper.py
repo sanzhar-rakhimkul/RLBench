@@ -59,8 +59,11 @@ class RLbenchWrapper(gym.Wrapper):
         elif self.env._observation_mode=='pixel' and len (self.observation_space)>1:
             self.observation_space=spaces.Dict(self.observation_space)
         if self.env._observation_mode=='state':
+            # self.observation_space=spaces.Box(
+            #     low=-np.inf, high=np.inf, shape=[sum(shp)], dtype=np.float32
+            # )
             self.observation_space=spaces.Box(
-                low=-np.inf, high=np.inf, shape=[sum(shp)], dtype=np.float32
+                low=-np.inf, high=np.inf, shape=[6], dtype=np.float32
             )
         
               
@@ -83,11 +86,14 @@ class RLbenchWrapper(gym.Wrapper):
 
     def get_observations(self):
         if self.env._observation_mode=="state":
+            # breakpoint()
             full_obs=self.get_obs()
+            obs = np.concatenate((full_obs.get_low_dim_data()[22:25], full_obs.get_low_dim_data()[-3:]))
             observation=[]
             for elem in self.obs_filters:
                 observation.append(full_obs.__dict__[elem])
-            return np.concatenate(observation)
+            # return np.concatenate(observation)
+            return obs
         elif self.env._observation_mode=="vision":
             full_obs=self.get_obs()
             observation={}
