@@ -124,13 +124,18 @@ class TaskEnvironment(object):
             joint_positions = self._robot.arm.solve_ik(
                 action[:3], quaternion=action[3:], relative_to=relative_to)
             self._robot.arm.set_joint_target_positions(joint_positions)
+            valid = True
         except IKError as e:
-            raise InvalidActionError('Could not find a path.') from e
+            # TUNG: Pass this error to avoid invalid joint position
+            valid = False
+            joint_positions = None
+            print('Could not find a path: ', e)
+            # raise InvalidActionError('Could not find a path.') from e
         done = False
         prev_values = None
         # Move until reached target joint positions or until we stop moving
         # (e.g. when we collide wth something)
-        while not done:
+        while not done and valid:
             self._scene.step()
             cur_positions = self._robot.arm.get_joint_positions()
             reached = np.allclose(cur_positions, joint_positions, atol=0.01)
