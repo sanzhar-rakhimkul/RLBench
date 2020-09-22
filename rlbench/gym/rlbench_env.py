@@ -29,14 +29,15 @@ class RLBenchEnv(gym.Env):
         else:
             raise ValueError(
                 'Unrecognised observation_mode: %s.' % observation_mode)
-        action_mode = ActionMode(ArmActionMode.ABS_JOINT_VELOCITY)
+        # action_mode = ActionMode(ArmActionMode.ABS_JOINT_VELOCITY)
+        action_mode = ActionMode(ArmActionMode.DELTA_EE_POSE_WORLD_FRAME)
         self.env = Environment(
             action_mode, obs_config=obs_config, headless=True)
         self.env.launch()
         self.task = self.env.get_task(task_class)
 
         _, obs = self.task.reset()
-
+        self.__full_obs=obs
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(self.env.action_size,))
 
@@ -68,7 +69,10 @@ class RLBenchEnv(gym.Env):
             else:
                 self._gym_cam.set_render_mode(RenderMode.OPENGL3)
 
+    def get_obs(self):
+        return self.__full_obs
     def _extract_obs(self, obs) -> Dict[str, np.ndarray]:
+        self.__full_obs=obs
         if self._observation_mode == 'state':
             return obs.get_low_dim_data()
         elif self._observation_mode == 'vision':

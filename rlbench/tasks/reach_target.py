@@ -43,6 +43,10 @@ class ReachTarget(Task):
     def base_rotation_bounds(self) -> Tuple[List[float], List[float]]:
         return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
 
+    def reward(self) -> float:
+        reward =-np.linalg.norm(self.target.get_position() - self.robot.gripper.get_position(), ord=2)
+        return reward
+
     def get_low_dim_state(self) -> np.ndarray:
         # One of the few tasks that have a custom low_dim_state function.
         return np.array(self.target.get_position())
