@@ -34,17 +34,38 @@ class RLbenchWrapper(gym.Wrapper):
         self.observation_space={}
         for elem in self.obs_filters:
             if elem in low_dim_data or elem in high_dim_data:
-                full_obs=self.get_obs()
-                if channels_first==True and not 'depth' in elem and not 'mask' in elem:
-                    t=full_obs.__dict__[elem].shape
-                    shp=np.array([t[2], t[0], t[1]])
-                else:
-                    shp=full_obs.__dict__[elem].shape
-                self.observation_space[elem]= spaces.Box(
-                    low=-np.inf, high=np.inf, shape=shp)
+                # breakpoint()
+                if self.env._observation_mode=='vision':
+                    full_obs=self.get_obs()
+                    # breakpoint()
+                    if channels_first==True and not 'depth' in elem and not 'mask' in elem:
+                        t=full_obs.__dict__[elem].shape
+                        shp=np.array([t[2], t[0], t[1]])
+                    else:
+                        shp=full_obs.__dict__[elem].shape
+                    self.observation_space[elem]= spaces.Box(
+                        low=0, high=255, shape=shp, dtype=np.int32)
+                elif self.env._observation_mode=='state':
+                    if 'shp' not in locals():
+                        shp=[]
+                    full_obs=self.get_obs()
+                    shp+=list(full_obs.__dict__[elem].shape)
+                
             else: 
                 raise ValueError("Not correct observation space data provided")
-        self.observation_space=spaces.Dict(self.observation_space)
+
+        if self.env._observation_mode=='pixel' and len(self.observation_space)==1:
+                self.observation_space=self.observation_space.popitem()[1]
+        elif self.env._observation_mode=='pixel' and len (self.observation_space)>1:
+            self.observation_space=spaces.Dict(self.observation_space)
+        if self.env._observation_mode=='state':
+            self.observation_space=spaces.Box(
+                low=-np.inf, high=np.inf, shape=[sum(shp)], dtype=np.float32
+            )
+        
+              
+
+        
         #TODO action_space as input to wrapper
         self.action_space = spaces.Box(
             low=-1.0,
@@ -85,6 +106,7 @@ class RLbenchWrapper(gym.Wrapper):
         pos *= scale
         if check_valid:
             pos = self._check_workspace_valid(pos)
+        # breakpoint()
         #TODO full position + orentation    
         if self.action_type=='position':
             gripper = np.array([1])
@@ -121,9 +143,20 @@ class RLbenchWrapper(gym.Wrapper):
 
         return self.get_observations()
 
+    def compute_reward(self, act, obs, info=None):
+        success, _ = self.env.task._task.success()
+        reward = self.env.task._task.reward()
+
+        # final_rew = reward + float(success)
+        # final_rew = 0.0 if success else -1.0
+        final_rew = reward
+        return final_rew
+
+
     def step(self, pos):
         action = self._make_full_action(pos, self._action_scale)
-        _, reward, done, info = self.env.step(action)
+        _, _, done, info = self.env.step(action)
         observation=self.get_observations()
-        return observation, reward, done, info
+        rew = self.compute_reward(action, observation)
+        return observation, rew, done, info
 
