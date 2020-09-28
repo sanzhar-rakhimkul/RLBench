@@ -95,10 +95,11 @@ class RLBenchWrapper_v1(core.Env):
         self._env_name = env_name
         self._render = render
         self._action_scale = action_scale
-        self._max_episode_steps = 100
+        self._max_episode_steps = None
         self.height = height
         self.width = width
         self.min_z_offset = min_z_offset
+        self.step_cnt = 0
 
         if 'state' in env_name:
             self._from_pixel = False
@@ -140,6 +141,8 @@ class RLBenchWrapper_v1(core.Env):
     def _make_env(self):
         render_mode = 'human' if self._render else None
         self.env = gym.make(self._env_name, render_mode=render_mode)
+        if self._env_name == "reach_target-state-v0":
+            self._max_episode_steps = 100
 
     @property
     def observation_space(self):
@@ -159,6 +162,7 @@ class RLBenchWrapper_v1(core.Env):
 
     def reset(self):
         self.env.reset()
+        self.step_cnt = 0
         # This loop for move gripper to initial position
         while True:
             del_pos = self._reset_tool_pos - self._current_tool_position
@@ -175,6 +179,11 @@ class RLBenchWrapper_v1(core.Env):
     def step(self, pos):
         action = self._make_full_action(pos, self._action_scale)
         obs, _, done, info = self.env.step(action)
+
+        # Control done flag by wrapper
+        self.step_cnt += 1
+        if self.step_cnt == self._max_episode_steps:
+            done = True
 
         success, _ = self.env.task._task.success()
         info.update(dict(success=success))
