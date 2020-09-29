@@ -1,6 +1,7 @@
-import gym
-from gym import core, spaces
+from pyquaternion import Quaternion
 import rlbench.gym
+from gym import core, spaces
+import gym
 import numpy as np
 
 
@@ -99,9 +100,10 @@ class RLBenchWrapper_v1(core.Env):
         self._max_episode_steps = None
         self.height = height
         self.width = width
-        self.step_cnt = 0
         self.min_z_offset = min_z_offset
         self.xy_tolerance = xy_tolerance
+        self.force_orientation = True
+        self.tool_target_quat = None
 
         if 'state' in env_name:
             self._from_pixel = False
@@ -112,13 +114,11 @@ class RLBenchWrapper_v1(core.Env):
 
         self.key_obs = 'front_rgb'
 
-        # self._reset_tool_pos = np.array([0.125, 0., 1.])
         self._reset_tool_pos = np.array([0.25, 0., 1.])
-        # Create task
+
         self._make_env()
 
         # Create observation space
-        # self._observation_space = self.env.observation_space
         self._observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -142,6 +142,8 @@ class RLBenchWrapper_v1(core.Env):
         self.ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
         self.ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
 
+        self.step_cnt = None
+
     def _make_env(self):
         render_mode = 'human' if self._render else None
         self.env = gym.make(self._env_name, render_mode=render_mode)
@@ -158,7 +160,13 @@ class RLBenchWrapper_v1(core.Env):
 
     @property
     def _current_tool_position(self):
+        # Return position of tip of gripper
         return self.env.env._robot.arm.get_tip().get_position().copy()
+
+    @property
+    def _current_tool_quaternion(self):
+        # Return quaternion of tip of gripper: (x, y, z, w)
+        return self.env.env._robot.arm.get_tip().get_quaternion().copy()
 
     @property
     def _robot_state_low_dim(self):
@@ -166,6 +174,8 @@ class RLBenchWrapper_v1(core.Env):
 
     def reset(self):
         self.env.reset()
+        # Keep tool's orientation same with reset's orientation
+        self.tool_target_quat = self._current_tool_quaternion
         self.step_cnt = 0
         # This loop for move gripper to initial position
         while True:
@@ -208,13 +218,27 @@ class RLBenchWrapper_v1(core.Env):
 
         return total_rew
 
+    def compute_delta_orientation(self, target_orientation):
+        # Compute current orientation of gripper
+        qx, qy, qz, qw = self._current_tool_quaternion
+        current_quat = Quaternion(qw, qx, qy, qz)
+        tqx, tqy, tqz, tqw = target_orientation
+        target_quat = Quaternion(tqw, tqx, tqy, tqz)
+        delta_quat = target_quat/current_quat
+        dqw, dqx, dqy, dqz = delta_quat
+        return [dqx, dqy, dqz, dqw]
+
     def _make_full_action(self, pos, scale=1.0, check_valid=True):
         pos *= scale
         if check_valid:
             pos = self._check_workspace_valid(pos)
 
         gripper = np.array([1])
-        quat = np.array([0, 0, 0, 1])
+        if self.force_orientation:
+            quat = self.compute_delta_orientation(self.tool_target_quat)
+            quat = np.array(quat)
+        else:
+            quat = np.array([0, 0, 0, 1])
         action_full = np.concatenate((pos, quat, gripper))
         return action_full
 
