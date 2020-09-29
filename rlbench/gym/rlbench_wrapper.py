@@ -86,10 +86,11 @@ class RLBenchWrapper_v1(core.Env):
     def __init__(self,
                  env_name,
                  render=False,
-                 action_scale=0.1,
+                 action_scale=0.05,
                  height=128,
                  width=128,
-                 min_z_offset=0.05):
+                 min_z_offset=0.05,
+                 xy_tolerance=0.1):
         assert env_name in ENV_SUPPORT, 'Environment {} is not supported'.format(env_name)
 
         self._env_name = env_name
@@ -98,8 +99,9 @@ class RLBenchWrapper_v1(core.Env):
         self._max_episode_steps = None
         self.height = height
         self.width = width
-        self.min_z_offset = min_z_offset
         self.step_cnt = 0
+        self.min_z_offset = min_z_offset
+        self.xy_tolerance = xy_tolerance
 
         if 'state' in env_name:
             self._from_pixel = False
@@ -134,6 +136,8 @@ class RLBenchWrapper_v1(core.Env):
 
         _boundary_center = self.env.task._task.boundaries.get_position()
         b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
+        b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
+        b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
         b_min_z += min_z_offset     # Add this offset to void gripper collide with table
         self.ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
         self.ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
