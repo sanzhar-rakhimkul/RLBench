@@ -3,9 +3,11 @@ import rlbench.gym
 from gym import core, spaces
 import gym
 import numpy as np
+from rlbench.observation_config import ObservationConfig, CameraConfig
 
 
 ENV_SUPPORT = ['reach_target-state-v0', 'reach_target-vision-v0']
+CAMERA_SUPPORT = ['left_shoulder_rgb', 'right_shoulder_rgb', 'wrist_rgb', 'front_rgb']
 
 
 # For action is joint space
@@ -88,19 +90,18 @@ class RLBenchWrapper_v1(core.Env):
                  env_name,
                  render=False,
                  action_scale=0.05,
-                 height=128,
-                 width=128,
-                 min_z_offset=0.05,
+                 height=84,
+                 width=84,
+                 z_offset=0.05,
                  xy_tolerance=0.1):
         assert env_name in ENV_SUPPORT, 'Environment {} is not supported'.format(env_name)
 
         self._env_name = env_name
         self._render = render
         self._action_scale = action_scale
-        self._max_episode_steps = None
         self.height = height
         self.width = width
-        self.min_z_offset = min_z_offset
+        self.z_offset = z_offset    # Make sure gripper always higher than table z_offset
         self.xy_tolerance = xy_tolerance
         self.force_orientation = True
         self.tool_target_quat = None
@@ -117,6 +118,7 @@ class RLBenchWrapper_v1(core.Env):
         self._reset_tool_pos = np.array([0.25, 0., 1.])
 
         self._make_env()
+        self.env.env._obs_config.front_camera.image_size = (84, 84)
 
         # Create observation space
         self._observation_space = spaces.Box(
@@ -134,21 +136,28 @@ class RLBenchWrapper_v1(core.Env):
             dtype=np.float32
         )
 
-        _boundary_center = self.env.task._task.boundaries.get_position()
-        b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
-        b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
-        b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
-        b_min_z += min_z_offset     # Add this offset to void gripper collide with table
-        self.ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
-        self.ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
+        # Get configurations of boundary
+        self.ws_min, self.ws_max = self.get_range_boundary()
 
         self.step_cnt = None
 
     def _make_env(self):
-        render_mode = 'human' if self._render else None
-        self.env = gym.make(self._env_name, render_mode=render_mode)
+        # Configure Camera
+        left_shoulder_camera = CameraConfig(image_size=(self.width, self.height))
+        right_shoulder_camera = CameraConfig(image_size=(self.width, self.height))
+        wrist_camera = CameraConfig(image_size=(self.width, self.height))
+        front_camera = CameraConfig(image_size=(self.width, self.height))
+        obs_config = ObservationConfig(left_shoulder_camera=left_shoulder_camera,
+                                       right_shoulder_camera=right_shoulder_camera,
+                                       wrist_camera=wrist_camera,
+                                       front_camera=front_camera)
+        self._max_episode_steps = None
         if self._env_name == "reach_target-state-v0":
             self._max_episode_steps = 100
+
+        render_mode = 'human' if self._render else None
+        self.env = gym.make(self._env_name, render_mode=render_mode, obs_config=obs_config)
+
 
     @property
     def observation_space(self):
@@ -193,6 +202,7 @@ class RLBenchWrapper_v1(core.Env):
     def step(self, pos):
         action = self._make_full_action(pos, self._action_scale)
         obs, _, done, info = self.env.step(action)
+        import pdb; pdb.set_trace()
 
         # Control done flag by wrapper
         self.step_cnt += 1
@@ -218,8 +228,10 @@ class RLBenchWrapper_v1(core.Env):
 
         return total_rew
 
-    def compute_delta_orientation(self, target_orientation):
-        # Compute current orientation of gripper
+    def _compute_delta_orientation(self, target_orientation):
+        """
+            Compute the delta of quaternion of target's orientation relative with current one
+        """
         qx, qy, qz, qw = self._current_tool_quaternion
         current_quat = Quaternion(qw, qx, qy, qz)
         tqx, tqy, tqz, tqw = target_orientation
@@ -228,6 +240,21 @@ class RLBenchWrapper_v1(core.Env):
         dqw, dqx, dqy, dqz = delta_quat
         return [dqx, dqy, dqz, dqw]
 
+    def get_range_boundary(self):
+        """
+            Compute the x-, y-, z-range of workspace, add some tolerances to make sure the gripper
+            can reach to boundary.
+        """
+        _boundary_center = self.env.task._task.boundaries.get_position()
+        b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
+        b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
+        b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
+        b_min_z += self.z_offset  # Add this offset to void gripper collide with table
+        ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
+        ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
+
+        return ws_min, ws_max
+
     def _make_full_action(self, pos, scale=1.0, check_valid=True):
         pos *= scale
         if check_valid:
@@ -235,7 +262,7 @@ class RLBenchWrapper_v1(core.Env):
 
         gripper = np.array([1])
         if self.force_orientation:
-            quat = self.compute_delta_orientation(self.tool_target_quat)
+            quat = self._compute_delta_orientation(self.tool_target_quat)
             quat = np.array(quat)
         else:
             quat = np.array([0, 0, 0, 1])

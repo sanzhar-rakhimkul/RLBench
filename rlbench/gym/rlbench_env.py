@@ -17,10 +17,11 @@ class RLBenchEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}
 
     def __init__(self, task_class, observation_mode='state',
-                 render_mode: Union[None, str] = None):
+                 render_mode: Union[None, str] = None,
+                 obs_config: ObservationConfig=ObservationConfig(), **kwargs):
         self._observation_mode = observation_mode
         self._render_mode = render_mode
-        obs_config = ObservationConfig()
+        # obs_config = ObservationConfig()
         if observation_mode == 'state':
             obs_config.set_all_high_dim(False)
             obs_config.set_all_low_dim(True)
