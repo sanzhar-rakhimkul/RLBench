@@ -88,23 +88,42 @@ class RLBenchWrapper_v1(core.Env):
     """
     def __init__(self,
                  env_name,
+                 seed=1,
                  render=False,
                  action_scale=0.05,
                  height=84,
                  width=84,
+                 frame_skip=1,
                  z_offset=0.05,
                  xy_tolerance=0.1):
+        """
+
+        :param env_name: Name of environment, must be in ENV_SUPPORT list
+        :param render: Rendering or not
+        :param action_scale: Actual action = action from agent x action_scale
+        :param height: of image
+        :param width: of image
+        :param frame_skip: An action will be repeated frame_skip time(s). This will not change the
+        horizon of task, but change the horizon of VRESP env in simulator, e.g. if skip_frame = 1,
+        the actual horizon in VRESP env is _max_episode_steps horizon, if skip_frame = 1, the actual
+        horizon in VRESP env is 2*_max_episode_steps horizon, and so on.
+        :param z_offset: The gripper is always higher than table z_offset
+        :param xy_tolerance: Make sure the gripper can reach to boundary.
+        """
         assert env_name in ENV_SUPPORT, 'Environment {} is not supported'.format(env_name)
 
         self._env_name = env_name
         self._render = render
         self._action_scale = action_scale
-        self.height = height
-        self.width = width
+        self._height = height
+        self._width = width
+        self._frame_skip = frame_skip
+        self._reset_tool_pos = np.array([0.25, 0., 1.]) # Make sure gripper inside of boundary
         self.z_offset = z_offset    # Make sure gripper always higher than table z_offset
         self.xy_tolerance = xy_tolerance
         self.force_orientation = True
         self.tool_target_quat = None
+        np.random.seed(seed)
 
         if 'state' in env_name:
             self._from_pixel = False
@@ -115,10 +134,7 @@ class RLBenchWrapper_v1(core.Env):
 
         self.key_obs = 'front_rgb'
 
-        self._reset_tool_pos = np.array([0.25, 0., 1.])
-
         self._make_env()
-        self.env.env._obs_config.front_camera.image_size = (84, 84)
 
         # Create observation space
         self._observation_space = spaces.Box(
@@ -143,10 +159,10 @@ class RLBenchWrapper_v1(core.Env):
 
     def _make_env(self):
         # Configure Camera
-        left_shoulder_camera = CameraConfig(image_size=(self.width, self.height))
-        right_shoulder_camera = CameraConfig(image_size=(self.width, self.height))
-        wrist_camera = CameraConfig(image_size=(self.width, self.height))
-        front_camera = CameraConfig(image_size=(self.width, self.height))
+        left_shoulder_camera = CameraConfig(image_size=(self._width, self._height))
+        right_shoulder_camera = CameraConfig(image_size=(self._width, self._height))
+        wrist_camera = CameraConfig(image_size=(self._width, self._height))
+        front_camera = CameraConfig(image_size=(self._width, self._height))
         obs_config = ObservationConfig(left_shoulder_camera=left_shoulder_camera,
                                        right_shoulder_camera=right_shoulder_camera,
                                        wrist_camera=wrist_camera,
@@ -201,7 +217,12 @@ class RLBenchWrapper_v1(core.Env):
 
     def step(self, pos):
         action = self._make_full_action(pos, self._action_scale)
-        obs, _, done, info = self.env.step(action)
+
+        obs, done, info = None, False, {}
+        for _ in range(self._frame_skip):
+            obs, _, done, info = self.env.step(action)
+            if done:
+                break   # Break if done from env, it means when success condition happened
 
         # Control done flag by wrapper
         self.step_cnt += 1
@@ -211,9 +232,14 @@ class RLBenchWrapper_v1(core.Env):
         success, _ = self.env.task._task.success()
         info.update(dict(success=success))
 
+        # TODO: Check that should cummulate reward across frame_skip?
         rew = self.compute_reward(action, obs)
 
         return self._get_obs(), rew, done, info
+
+    def seed(self, seed=None):
+        self.action_space.seed(seed)
+        self.observation_space.seed(seed)
 
     def compute_reward(self, act, obs, info=None):
         if self.env.task._task.__class__.__name__ == 'ReachTarget':
