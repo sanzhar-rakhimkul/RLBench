@@ -202,7 +202,6 @@ class RLBenchWrapper_v1(core.Env):
     def step(self, pos):
         action = self._make_full_action(pos, self._action_scale)
         obs, _, done, info = self.env.step(action)
-        import pdb; pdb.set_trace()
 
         # Control done flag by wrapper
         self.step_cnt += 1
