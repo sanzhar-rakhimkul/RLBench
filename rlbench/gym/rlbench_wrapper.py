@@ -94,6 +94,8 @@ class RLBenchWrapper_v1(core.Env):
                  height=84,
                  width=84,
                  frame_skip=1,
+                 channels_first=True,
+                 pixel_normalize=False,
                  z_offset=0.05,
                  xy_tolerance=0.1):
         """
@@ -117,6 +119,8 @@ class RLBenchWrapper_v1(core.Env):
         self._action_scale = action_scale
         self._height = height
         self._width = width
+        self._channels_first = channels_first
+        self._pixel_normalize = pixel_normalize
         self._frame_skip = frame_skip
         self._reset_tool_pos = np.array([0.25, 0., 1.]) # Make sure gripper inside of boundary
         self.z_offset = z_offset    # Make sure gripper always higher than table z_offset
@@ -137,19 +141,25 @@ class RLBenchWrapper_v1(core.Env):
         self._make_env()
 
         # Create observation space
+        if self._from_pixel:
+            shape = [3, height, width] if channels_first else [height, width, 3]
+            if pixel_normalize:
+                obs_low, obs_high = 0., 1.
+                obs_type = np.float32
+            else:
+                obs_low, obs_high = 0, 255
+                obs_type = np.uint8
+        else:
+            shape = [3 + 3]     # Current tool's position + target's position
+            obs_low, obs_high = -np.inf, np.inf
+            obs_type = np.float32
         self._observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(6, ),
-            dtype=np.float32
+            low=obs_low, high=obs_high, shape=shape, dtype=obs_type
         )
 
         # Create action space
         self._action_space = spaces.Box(
-            low=-1.0,
-            high=1.0,
-            shape=(self.env.action_space.shape[0] - 4 - 1,),
-            dtype=np.float32
+            low=-1.0, high=1.0, shape=(self.env.action_space.shape[0] - 4 - 1,), dtype=np.float32
         )
 
         # Get configurations of boundary
@@ -159,10 +169,10 @@ class RLBenchWrapper_v1(core.Env):
 
     def _make_env(self):
         # Configure Camera
-        left_shoulder_camera = CameraConfig(image_size=(self._width, self._height))
-        right_shoulder_camera = CameraConfig(image_size=(self._width, self._height))
-        wrist_camera = CameraConfig(image_size=(self._width, self._height))
-        front_camera = CameraConfig(image_size=(self._width, self._height))
+        left_shoulder_camera = CameraConfig(image_size=(self._height, self._width))
+        right_shoulder_camera = CameraConfig(image_size=(self._height, self._width))
+        wrist_camera = CameraConfig(image_size=(self._height, self._width))
+        front_camera = CameraConfig(image_size=(self._height, self._width))
         obs_config = ObservationConfig(left_shoulder_camera=left_shoulder_camera,
                                        right_shoulder_camera=right_shoulder_camera,
                                        wrist_camera=wrist_camera,
@@ -299,6 +309,10 @@ class RLBenchWrapper_v1(core.Env):
             # Get visual state after move to initial position
             obs = self.env.task._scene.get_observation()
             obs = obs.__dict__[self.key_obs]
+            if self._channels_first:
+                obs = obs.transpose(2, 0, 1).copy()
+            if not self._pixel_normalize:
+                obs = (obs * 255).astype(np.uint8)
         else:
             obs_full = self._robot_state_low_dim
             # obs = np.concatenate((obs_full[7:14], obs_full[-3:]))
