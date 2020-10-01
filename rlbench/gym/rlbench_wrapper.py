@@ -4,11 +4,12 @@ from gym import core, spaces
 import gym
 import numpy as np
 from rlbench.observation_config import ObservationConfig, CameraConfig
+from pyrep.const import RenderMode
 
 
-ENV_SUPPORT = ['reach_target-state-v0', 'reach_target-vision-v0']
+ENV_SUPPORT = {'reach_target-state-v0': 100, 'reach_target-vision-v0':100}
 CAMERA_SUPPORT = ['left_shoulder_rgb', 'right_shoulder_rgb', 'wrist_rgb', 'front_rgb']
-
+RENDER_MODE = RenderMode.OPENGL
 
 # For action is joint space
 class RLBenchWrapper(core.Env):
@@ -16,7 +17,7 @@ class RLBenchWrapper(core.Env):
                  env_name,
                  render=False,
                  action_scale=0.01):
-        assert env_name in ENV_SUPPORT, 'Environment {} is not supported'.format(env_name)
+        assert env_name in ENV_SUPPORT.keys(), 'Environment {} is not supported'.format(env_name)
 
         self._env_name = env_name
         self._render = render
@@ -112,7 +113,7 @@ class RLBenchWrapper_v1(core.Env):
         :param z_offset: The gripper is always higher than table z_offset
         :param xy_tolerance: Make sure the gripper can reach to boundary.
         """
-        assert env_name in ENV_SUPPORT, 'Environment {} is not supported'.format(env_name)
+        assert env_name in ENV_SUPPORT.keys(), 'Environment {} is not supported'.format(env_name)
 
         self._env_name = env_name
         self._render = render
@@ -169,17 +170,20 @@ class RLBenchWrapper_v1(core.Env):
 
     def _make_env(self):
         # Configure Camera
-        left_shoulder_camera = CameraConfig(image_size=(self._height, self._width))
-        right_shoulder_camera = CameraConfig(image_size=(self._height, self._width))
-        wrist_camera = CameraConfig(image_size=(self._height, self._width))
-        front_camera = CameraConfig(image_size=(self._height, self._width))
-        obs_config = ObservationConfig(left_shoulder_camera=left_shoulder_camera,
-                                       right_shoulder_camera=right_shoulder_camera,
+        use_left, use_right, use_wrist, use_front = False, False, False, True
+        left_camera = CameraConfig(image_size=(self._height, self._width), render_mode=RENDER_MODE,
+                                   rgb=use_left, depth=use_left, mask=use_left)
+        right_camera = CameraConfig(image_size=(self._height, self._width), render_mode=RENDER_MODE,
+                                    rgb=use_right, depth=use_right, mask=use_right)
+        wrist_camera = CameraConfig(image_size=(self._height, self._width), render_mode=RENDER_MODE,
+                                    rgb=use_wrist, depth=use_wrist, mask=use_wrist)
+        front_camera = CameraConfig(image_size=(self._height, self._width), render_mode=RENDER_MODE,
+                                    rgb=use_front, depth=use_front, mask=use_front)
+        obs_config = ObservationConfig(left_shoulder_camera=left_camera,
+                                       right_shoulder_camera=right_camera,
                                        wrist_camera=wrist_camera,
                                        front_camera=front_camera)
-        self._max_episode_steps = None
-        if self._env_name == "reach_target-state-v0":
-            self._max_episode_steps = 100
+        self._max_episode_steps = ENV_SUPPORT[self._env_name]
 
         render_mode = 'human' if self._render else None
         self.env = gym.make(self._env_name, render_mode=render_mode, obs_config=obs_config)
@@ -327,8 +331,8 @@ class RLBenchWrapper_v1(core.Env):
         tool_next_position = np.clip(tool_next_position, self.ws_min, self.ws_max)
         # Get action (delta) after truncateing
         truncated_action = tool_next_position - self._current_tool_position
-        if not np.allclose(action, truncated_action, atol=1e-6):
-            print('[DEBUG]: Truncating action')
+        # if not np.allclose(action, truncated_action, atol=1e-6):
+        #     print('[DEBUG]: Truncating action')
         return truncated_action
 
 
