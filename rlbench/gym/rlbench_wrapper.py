@@ -207,7 +207,7 @@ class RLBenchWrapper_v1(core.Env):
     @property
     def _current_tool_position(self):
         # Return position of tip of gripper
-        return self.env.env._robot.arm.get_tip().get_position().copy()
+        return self.env.task._task.robot.arm.get_tip().get_position().copy()
 
     @property
     def _current_tool_quaternion(self):
@@ -275,6 +275,10 @@ class RLBenchWrapper_v1(core.Env):
                                      self.env.task._task.robot.arm.get_tip().get_position(), ord=2)
             # final_rew = 0.0 if success else -1.0
             total_rew = reward
+        elif self.env.task._task.__class__.__name__ == 'PushButton':
+            reward = -np.linalg.norm(self.env.task._task.target_button.get_position() -
+                                     self.env.task._task.robot.arm.get_tip().get_position(), ord=2)
+            total_rew = reward
         else:
             raise NotImplementedError('Not support compute reward for environment.')
 
@@ -297,13 +301,18 @@ class RLBenchWrapper_v1(core.Env):
             Compute the x-, y-, z-range of workspace, add some tolerances to make sure the gripper
             can reach to boundary.
         """
-        _boundary_center = self.env.task._task.boundaries.get_position()
-        b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
-        b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
-        b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
-        b_min_z += self.z_offset  # Add this offset to void gripper collide with table
-        ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
-        ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
+        if hasattr(self.env.task._task, 'boundaries'):
+            _boundary_center = self.env.task._task.boundaries.get_position()
+            b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
+            b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
+            b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
+            b_min_z += self.z_offset  # Add this offset to void gripper collide with table
+            ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
+            ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
+        else:
+            # In tasks that don't provide boundary, using default boundary cloning from reach_target
+            ws_min = np.array([-0.1 , -0.45,  0.75 + self.z_offset])
+            ws_max = np.array([0.6 , 0.45, 1.25])
 
         return ws_min, ws_max
 
