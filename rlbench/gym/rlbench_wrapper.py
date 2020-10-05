@@ -313,13 +313,13 @@ class RLBenchWrapper_v1(core.Env):
             pos = self._check_workspace_valid(pos)
 
         if self._use_gripper:
-            # Original, gripper in [-1, 1] -> need to scale in range [0, 1]
+            # The space of wrapper's gripper in [-1, 1] -> need to scale in range [0, 1]
             if gripper is not None:
-                gripper = np.array([(gripper + 1.0) / 2])
+                gripper = np.array([(gripper + 1.0) / 2])   # [0, 0.5): close, [0.5, 1]: open
             else:
-                gripper = np.array([1])
+                gripper = np.array([0])     # Close
         else:
-            gripper = np.array([1])
+            gripper = np.array([0])     # Close
         if self.force_orientation:
             quat = self._compute_delta_orientation(self.tool_target_quat)
             quat = np.array(quat)
