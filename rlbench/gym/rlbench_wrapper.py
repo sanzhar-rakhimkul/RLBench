@@ -7,7 +7,8 @@ from rlbench.observation_config import ObservationConfig, CameraConfig
 from pyrep.const import RenderMode
 
 
-ENV_SUPPORT = {'reach_target-state-v0': 100, 'reach_target-vision-v0':100}
+ENV_SUPPORT = {'reach_target-state-v0': 100, 'reach_target-vision-v0':100,
+               'push_button-state-v0': 100, 'push_button-vision-v0': 100}
 CAMERA_SUPPORT = ['left_shoulder_rgb', 'right_shoulder_rgb', 'wrist_rgb', 'front_rgb']
 RENDER_MODE = RenderMode.OPENGL
 
@@ -98,7 +99,8 @@ class RLBenchWrapper_v1(core.Env):
                  channels_first=True,
                  pixel_normalize=False,
                  z_offset=0.05,
-                 xy_tolerance=0.1):
+                 xy_tolerance=0.1,
+                 use_gripper=False):
         """
 
         :param env_name: Name of environment, must be in ENV_SUPPORT list
@@ -124,6 +126,7 @@ class RLBenchWrapper_v1(core.Env):
         self._pixel_normalize = pixel_normalize
         self._frame_skip = frame_skip
         self._reset_tool_pos = np.array([0.25, 0., 1.]) # Make sure gripper inside of boundary
+        self._use_gripper = use_gripper
         self.z_offset = z_offset    # Make sure gripper always higher than table z_offset
         self.xy_tolerance = xy_tolerance
         self.force_orientation = True
@@ -151,7 +154,10 @@ class RLBenchWrapper_v1(core.Env):
                 obs_low, obs_high = 0, 255
                 obs_type = np.uint8
         else:
-            shape = [3 + 3]     # Current tool's position + target's position
+            if self._use_gripper:
+                shape = [3 + 3 + 1]     # Current tool's position + target's position
+            else:
+                shape = [3 + 3]
             obs_low, obs_high = -np.inf, np.inf
             obs_type = np.float32
         self._observation_space = spaces.Box(
@@ -159,8 +165,9 @@ class RLBenchWrapper_v1(core.Env):
         )
 
         # Create action space
+        shape = (self.env.action_space.shape[0] - 4,) if use_gripper else (self.env.action_space.shape[0] - 5,)
         self._action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(self.env.action_space.shape[0] - 4 - 1,), dtype=np.float32
+            low=-1.0, high=1.0, shape=shape, dtype=np.float32
         )
 
         # Get configurations of boundary
@@ -209,6 +216,10 @@ class RLBenchWrapper_v1(core.Env):
 
     @property
     def _robot_state_low_dim(self):
+        # Structure of get_low_dim_data:
+        # gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
+        # gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
+        # task_low_dim_state (3)
         return self.env.task._scene.get_observation().get_low_dim_data().copy()
 
     def reset(self):
@@ -229,8 +240,10 @@ class RLBenchWrapper_v1(core.Env):
 
         return self._get_obs()
 
-    def step(self, pos):
-        action = self._make_full_action(pos, self._action_scale)
+    def step(self, act):
+        pos = act[:3]
+        gripper = act[-1] if self._use_gripper else None
+        action = self._make_full_action(pos, gripper, self._action_scale)
 
         obs, done, info = None, False, {}
         for _ in range(self._frame_skip):
@@ -294,12 +307,19 @@ class RLBenchWrapper_v1(core.Env):
 
         return ws_min, ws_max
 
-    def _make_full_action(self, pos, scale=1.0, check_valid=True):
+    def _make_full_action(self, pos, gripper=None, scale=1.0, check_valid=True):
         pos *= scale
         if check_valid:
             pos = self._check_workspace_valid(pos)
 
-        gripper = np.array([1])
+        if self._use_gripper:
+            # Original, gripper in [-1, 1] -> need to scale in range [0, 1]
+            if gripper is not None:
+                gripper = np.array([(gripper + 1.0) / 2])
+            else:
+                gripper = np.array([1])
+        else:
+            gripper = np.array([1])
         if self.force_orientation:
             quat = self._compute_delta_orientation(self.tool_target_quat)
             quat = np.array(quat)
@@ -320,7 +340,10 @@ class RLBenchWrapper_v1(core.Env):
         else:
             obs_full = self._robot_state_low_dim
             # obs = np.concatenate((obs_full[7:14], obs_full[-3:]))
-            obs = np.concatenate((obs_full[22:25], obs_full[-3:]))
+            if self._use_gripper:
+                obs = np.concatenate((obs_full[22:25], obs_full[-3:], obs_full[0, None]))
+            else:
+                obs = np.concatenate((obs_full[22:25], obs_full[-3:]))
         return obs.copy()
 
     def _check_workspace_valid(self, action):
