@@ -100,10 +100,12 @@ class RLBenchWrapper_v1(core.Env):
                  pixel_normalize=False,
                  z_offset=0.05,
                  xy_tolerance=0.1,
-                 use_gripper=False):
+                 use_gripper=False,
+                 allow_finish_soon=False):
         """
 
         :param env_name: Name of environment, must be in ENV_SUPPORT list
+        :param seed: Set seed for environment
         :param render: Rendering or not
         :param action_scale: Actual action = action from agent x action_scale
         :param height: of image
@@ -112,8 +114,13 @@ class RLBenchWrapper_v1(core.Env):
         horizon of task, but change the horizon of VRESP env in simulator, e.g. if skip_frame = 1,
         the actual horizon in VRESP env is _max_episode_steps horizon, if skip_frame = 1, the actual
         horizon in VRESP env is 2*_max_episode_steps horizon, and so on.
+        :param channels_first:
+        :param pixel_normalize:
         :param z_offset: The gripper is always higher than table z_offset
         :param xy_tolerance: Make sure the gripper can reach to boundary.
+        :param use_gripper:
+        :param allow_finish_soon: Allowing terminate task when reach successful condition. It makes
+        task's horizon varying.
         """
         assert env_name in ENV_SUPPORT.keys(), 'Environment {} is not supported'.format(env_name)
 
@@ -129,6 +136,7 @@ class RLBenchWrapper_v1(core.Env):
         self._use_gripper = use_gripper
         self.z_offset = z_offset    # Make sure gripper always higher than table z_offset
         self.xy_tolerance = xy_tolerance
+        self._allow_finish_soon = allow_finish_soon
         self.force_orientation = True
         self.tool_target_quat = None
         np.random.seed(seed)
@@ -247,9 +255,12 @@ class RLBenchWrapper_v1(core.Env):
 
         obs, done, info = None, False, {}
         for _ in range(self._frame_skip):
-            obs, _, done, info = self.env.step(action)
-            if done:
-                break   # Break if done from env, it means when success condition happened
+            if self._allow_finish_soon:
+                obs, _, done, info = self.env.step(action)
+                if done:
+                    break   # Break if done from env, it means when success condition happened
+            else:
+                obs, _, _, info = self.env.step(action)
 
         # Control done flag by wrapper
         self.step_cnt += 1
