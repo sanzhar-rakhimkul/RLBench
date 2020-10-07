@@ -53,10 +53,9 @@ class RLbenchWrapper(gym.Wrapper):
                 
             else: 
                 raise ValueError("Not correct observation space data provided")
-
-        if self.env._observation_mode=='pixel' and len(self.observation_space)==1:
-                self.observation_space=self.observation_space.popitem()[1]
-        elif self.env._observation_mode=='pixel' and len (self.observation_space)>1:
+        if self.env._observation_mode=='vision' and len(self.observation_space)==1:
+            self.observation_space=self.observation_space.popitem()[1]
+        elif self.env._observation_mode=='vision' and len (self.observation_space)>1:
             self.observation_space=spaces.Dict(self.observation_space)
         if self.env._observation_mode=='state':
             # self.observation_space=spaces.Box(
@@ -100,9 +99,9 @@ class RLbenchWrapper(gym.Wrapper):
             for elem in self.obs_filters:
                 visual_data=full_obs.__dict__[elem]
                 if self.channels_first and not 'depth' in elem and not 'mask' in elem:
-                    img=np.transpose(visual_data,(2,0,1))
+                    img=np.transpose(visual_data,(2,0,1)).astype(np.uint8)
                 else:
-                    img=visual_data.copy()
+                    img=visual_data.copy().astype(np.uint8)
                 observation[elem]=img
             if len(observation)==1:
                 observation=observation.popitem()[1]
@@ -131,7 +130,7 @@ class RLbenchWrapper(gym.Wrapper):
         # Get action (delta) after truncateing
         truncated_action = tool_next_position - self._current_tool_position()
         if not np.allclose(action, truncated_action, atol=1e-6):
-            print('[DEBUG]: Truncating action')
+            print('[DEBUG]: Truncating action', np.linalg.norm(action-truncated_action , ord=2) )
         return truncated_action
         
     def reset(self):

@@ -9,7 +9,7 @@ class CameraConfig(object):
                  depth=True,
                  depth_noise: NoiseModel=Identity(),
                  mask=True,
-                 image_size=(128, 128),
+                 image_size=(84, 84),
                  render_mode=RenderMode.OPENGL3,
                  masks_as_one_channel=True):
         self.rgb = rgb
