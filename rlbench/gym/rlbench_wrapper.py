@@ -101,7 +101,8 @@ class RLBenchWrapper_v1(core.Env):
                  z_offset=0.05,
                  xy_tolerance=0.1,
                  use_gripper=False,
-                 allow_finish_soon=False):
+                 allow_finish_soon=False,
+                 use_depth=False):
         """
 
         :param env_name: Name of environment, must be in ENV_SUPPORT list
@@ -148,13 +149,20 @@ class RLBenchWrapper_v1(core.Env):
         else:
             raise NotImplementedError('Not support this environment: {}'.format(env_name))
 
-        self.key_obs = 'front_rgb'
+        if use_depth:
+            assert self._from_pixel is True, 'Not support depth for env: {}'.format(env_name)
+        self._use_depth = use_depth
+        self.key_obs_rgb = 'front_rgb'
+        self.key_obs_depth = 'front_depth'
 
         self._make_env()
 
         # Create observation space
         if self._from_pixel:
-            shape = [3, height, width] if channels_first else [height, width, 3]
+            if self._use_depth:
+                shape = [4, height, width] if channels_first else [height, width, 4]
+            else:
+                shape = [3, height, width] if channels_first else [height, width, 3]
             if pixel_normalize:
                 obs_low, obs_high = 0., 1.
                 obs_type = np.float32
@@ -352,11 +360,16 @@ class RLBenchWrapper_v1(core.Env):
         if self._from_pixel:
             # Get visual state after move to initial position
             obs = self.env.task._scene.get_observation()
-            obs = obs.__dict__[self.key_obs]
+            obs_rgb = obs.__dict__[self.key_obs_rgb]
+            if self._use_depth:
+                obs_depth = obs.__dict__[self.key_obs_depth]
+                obs = np.concatenate((obs_rgb, obs_depth[:, :, None]), axis=2)
+            else:
+                obs = obs_rgb
             if self._channels_first:
                 obs = obs.transpose(2, 0, 1).copy()
             if not self._pixel_normalize:
-                obs = (obs * 255).astype(np.uint8)
+                obs = (obs * 255).astype(np.uint8).copy()
         else:
             obs_full = self._robot_state_low_dim
             # obs = np.concatenate((obs_full[7:14], obs_full[-3:]))

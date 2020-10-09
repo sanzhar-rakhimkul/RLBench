@@ -67,10 +67,13 @@ class RLBenchEnv(gym.Env):
         if render_mode is not None:
             # Add the camera to the scene
             cam_placeholder = Dummy('cam_cinematic_placeholder')
+            if observation_mode == 'vision':
+                cam_placeholder = self.env._scene._cam_front
             self._gym_cam = VisionSensor.create([640, 360])
             self._gym_cam.set_pose(cam_placeholder.get_pose())
             if render_mode == 'human':
-                self._gym_cam.set_render_mode(RenderMode.OPENGL3_WINDOWED)
+                # self._gym_cam.set_render_mode(RenderMode.OPENGL3_WINDOWED)
+                self._gym_cam.set_render_mode(RenderMode.EXTERNAL_WINDOWED)
             else:
                 self._gym_cam.set_render_mode(RenderMode.OPENGL3)
 
