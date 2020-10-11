@@ -25,11 +25,13 @@ class ReachTarget(Task):
         color_choices = np.random.choice(
             list(range(index)) + list(range(index + 1, len(colors))),
             size=2, replace=False)
+        color_choices = [3, 4]
         for ob, i in zip([self.distractor0, self.distractor1], color_choices):
             name, rgb = colors[i]
             ob.set_color(rgb)
         b = SpawnBoundary([self.boundaries])
-        for ob in [self.target, self.distractor0, self.distractor1]:
+        # for ob in [self.target, self.distractor0, self.distractor1]:
+        for ob in [self.target]:
             b.sample(ob, min_distance=0.2,
                      min_rotation=(0, 0, 0), max_rotation=(0, 0, 0))
 
