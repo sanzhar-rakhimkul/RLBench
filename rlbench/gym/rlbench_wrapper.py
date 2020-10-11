@@ -102,6 +102,7 @@ class RLBenchWrapper_v1(core.Env):
                  xy_tolerance=0.1,
                  use_gripper=False,
                  allow_finish_soon=False,
+                 use_rgb=True,
                  use_depth=False):
         """
 
@@ -149,8 +150,9 @@ class RLBenchWrapper_v1(core.Env):
         else:
             raise NotImplementedError('Not support this environment: {}'.format(env_name))
 
-        if use_depth:
-            assert self._from_pixel is True, 'Not support depth for env: {}'.format(env_name)
+        if use_depth or use_rgb:
+            assert self._from_pixel is True, 'Not support rgb/depth for env: {}'.format(env_name)
+        self._use_rgb = use_rgb
         self._use_depth = use_depth
         self.key_obs_rgb = 'front_rgb'
         self.key_obs_depth = 'front_depth'
@@ -159,10 +161,14 @@ class RLBenchWrapper_v1(core.Env):
 
         # Create observation space
         if self._from_pixel:
-            if self._use_depth:
+            if self._use_rgb and self._use_depth:
                 shape = [4, height, width] if channels_first else [height, width, 4]
-            else:
+            elif self._use_rgb and not self._use_depth:
                 shape = [3, height, width] if channels_first else [height, width, 3]
+            elif not self._use_rgb and self._use_depth:
+                shape = [1, height, width] if channels_first else [height, width, 1]
+            else:
+                raise ValueError("Please set use_rgb or use_depth, or both to True.")
             if pixel_normalize:
                 obs_low, obs_high = 0., 1.
                 obs_type = np.float32
@@ -359,13 +365,23 @@ class RLBenchWrapper_v1(core.Env):
     def _get_obs(self):
         if self._from_pixel:
             # Get visual state after move to initial position
-            obs = self.env.task._scene.get_observation()
-            obs_rgb = obs.__dict__[self.key_obs_rgb]
-            if self._use_depth:
-                obs_depth = obs.__dict__[self.key_obs_depth]
+            obs_dict = self.env.task._scene.get_observation()
+            if self._use_rgb and self._use_depth:
+                # RGB-D
+                obs_rgb = obs_dict.__dict__[self.key_obs_rgb]
+                obs_depth = obs_dict.__dict__[self.key_obs_depth]
                 obs = np.concatenate((obs_rgb, obs_depth[:, :, None]), axis=2)
-            else:
+            elif not self._use_rgb and self._use_depth:
+                # D only
+                obs_depth = obs_dict.__dict__[self.key_obs_depth]
+                obs = obs_depth[:, :, None]
+            elif self._use_rgb and not self._use_depth:
+                # RGB
+                obs_rgb = obs_dict.__dict__[self.key_obs_rgb]
                 obs = obs_rgb
+            else:
+                raise NotImplementedError
+
             if self._channels_first:
                 obs = obs.transpose(2, 0, 1).copy()
             if not self._pixel_normalize:
