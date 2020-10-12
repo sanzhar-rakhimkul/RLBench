@@ -334,13 +334,15 @@ class RLBenchWrapper_v1(core.Env):
             can reach to boundary.
         """
         if hasattr(self.env.task._task, 'boundaries'):
-            _boundary_center = self.env.task._task.boundaries.get_position()
-            b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
-            b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
-            b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
-            b_min_z += self.z_offset  # Add this offset to void gripper collide with table
-            ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
-            ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
+            # _boundary_center = self.env.task._task.boundaries.get_position()
+            # b_min_x, b_max_x, b_min_y, b_max_y, b_min_z, b_max_z = self.env.task._task.boundaries.get_bounding_box()
+            # b_min_x, b_max_x = (b_min_x - self.xy_tolerance, b_max_x + self.xy_tolerance)
+            # b_min_y, b_max_y = (b_min_y - self.xy_tolerance, b_max_y + self.xy_tolerance)
+            # b_min_z += self.z_offset  # Add this offset to void gripper collide with table
+            # ws_min = np.round(_boundary_center + np.array([b_min_x, b_min_y, b_min_z]), 2)
+            # ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
+            ws_min = np.array([-0.1, -0.45, 0.75 + self.z_offset])
+            ws_max = np.array([0.6, 0.45, 1.25])
         else:
             # In tasks that don't provide boundary, using default boundary cloning from reach_target
             ws_min = np.array([-0.1 , -0.45,  0.75])    #  + self.z_offset
