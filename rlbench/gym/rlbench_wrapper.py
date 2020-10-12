@@ -9,6 +9,7 @@ from pyrep.const import RenderMode
 
 ENV_SUPPORT = {'reach_target-state-v0': 100, 'reach_target-vision-v0':100,
                'reach_target_simple-state-v0': 100, 'reach_target_simple-vision-v0':100,
+               'reach_target_harder-state-v0': 100, 'reach_target_harder-vision-v0':100,
                'push_button-state-v0': 100, 'push_button-vision-v0': 100}
 CAMERA_SUPPORT = ['left_shoulder_rgb', 'right_shoulder_rgb', 'wrist_rgb', 'front_rgb']
 RENDER_MODE = RenderMode.OPENGL
@@ -300,7 +301,7 @@ class RLBenchWrapper_v1(core.Env):
         self.observation_space.seed(seed)
 
     def compute_reward(self, act, obs, info=None):
-        if self.env.task._task.__class__.__name__ in ['ReachTarget', 'ReachTargetSimple']:
+        if self.env.task._task.__class__.__name__ in ['ReachTarget', 'ReachTargetSimple', 'ReachTargetHarder']:
             success, _ = self.env.task._task.success()
             reward = -np.linalg.norm(self.env.task._task.target.get_position() -
                                      self.env.task._task.robot.arm.get_tip().get_position(), ord=2)
@@ -395,7 +396,7 @@ class RLBenchWrapper_v1(core.Env):
         else:
             obs_full = self._robot_state_low_dim
             cur_tool_pos = obs_full[22:25].copy()
-            if self.env.task._task.__class__.__name__ in ['ReachTarget', 'ReachTargetSimple']:
+            if self.env.task._task.__class__.__name__ in ['ReachTarget', 'ReachTargetSimple', 'ReachTargetHarder']:
                 target_pos = obs_full[-3:].copy()
                 obs = np.concatenate((cur_tool_pos, target_pos))
                 if self._use_gripper:

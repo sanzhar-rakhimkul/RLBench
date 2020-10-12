@@ -98,6 +98,8 @@ from rlbench.tasks.unplug_charger import UnplugCharger
 from rlbench.tasks.water_plants import WaterPlants
 from rlbench.tasks.weighing_scales import WeighingScales
 from rlbench.tasks.wipe_desk import WipeDesk
+from rlbench.tasks.reach_target_harder import ReachTargetHarder
+from rlbench.tasks.reach_target_simple import ReachTargetSimple
 
 FS10_V1 = {
     'train': [
