@@ -238,10 +238,15 @@ class RLBenchWrapper_v1(core.Env):
 
     @property
     def _robot_state_low_dim(self):
-        # Structure of get_low_dim_data:
-        # gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
-        # gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
-        # task_low_dim_state (3)
+        # Structure of get_low_dim_data for:
+        # Reaching:
+        #   gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
+        #   gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
+        #   task_low_dim_state (3)
+        # Push Button:
+        #   gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
+        #   gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
+        #   task_low_dim_state (43)
         return self.env.task._scene.get_observation().get_low_dim_data().copy()
 
     def reset(self):
@@ -336,7 +341,7 @@ class RLBenchWrapper_v1(core.Env):
             ws_max = np.round(_boundary_center + np.array([b_max_x, b_max_y, b_max_z]), 2)
         else:
             # In tasks that don't provide boundary, using default boundary cloning from reach_target
-            ws_min = np.array([-0.1 , -0.45,  0.75 + self.z_offset])
+            ws_min = np.array([-0.1 , -0.45,  0.75])    #  + self.z_offset
             ws_max = np.array([0.6 , 0.45, 1.25])
 
         return ws_min, ws_max
@@ -388,11 +393,21 @@ class RLBenchWrapper_v1(core.Env):
                 obs = (obs * 255).astype(np.uint8).copy()
         else:
             obs_full = self._robot_state_low_dim
-            # obs = np.concatenate((obs_full[7:14], obs_full[-3:]))
-            if self._use_gripper:
-                obs = np.concatenate((obs_full[22:25], obs_full[-3:], obs_full[0, None]))
+            cur_tool_pos = obs_full[22:25].copy()
+            if self.env.task._task.__class__.__name__ == 'ReachTarget':
+                target_pos = obs_full[-3:].copy()
+                obs = np.concatenate((cur_tool_pos, target_pos))
+                if self._use_gripper:
+                    gripper_state = obs_full[0, None]
+                    obs = np.concatenate((obs, gripper_state))
+            elif self.env.task._task.__class__.__name__ == 'PushButton':
+                button_pos = obs_full[37:40]
+                obs = np.concatenate((cur_tool_pos, button_pos))
+                if self._use_gripper:
+                    gripper_state = obs_full[0, None]
+                    obs = np.concatenate((obs, gripper_state))
             else:
-                obs = np.concatenate((obs_full[22:25], obs_full[-3:]))
+                raise NotImplementedError('Not support compute reward for environment.')
         return obs.copy()
 
     def _check_workspace_valid(self, action):
