@@ -75,7 +75,7 @@ class RLBenchEnv(gym.Env):
                 # self._gym_cam.set_render_mode(RenderMode.OPENGL3_WINDOWED)
                 self._gym_cam.set_render_mode(RenderMode.EXTERNAL_WINDOWED)
             else:
-                self._gym_cam.set_render_mode(RenderMode.OPENGL3)
+                self._gym_cam.set_render_mode(RenderMode.OPENGL)
 
     def _extract_obs(self, obs) -> Dict[str, np.ndarray]:
         if self._observation_mode == 'state':
