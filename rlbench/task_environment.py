@@ -36,7 +36,8 @@ class TaskEnvironment(object):
     def __init__(self, pyrep: PyRep, robot: Robot, scene: Scene, task: Task,
                  action_mode: ActionMode, dataset_root: str,
                  obs_config: ObservationConfig,
-                 static_positions: bool = False):
+                 static_positions: bool = False,
+                 attach_grasped_objects: bool = True):
         self._pyrep = pyrep
         self._robot = robot
         self._scene = scene
@@ -46,6 +47,7 @@ class TaskEnvironment(object):
         self._dataset_root = dataset_root
         self._obs_config = obs_config
         self._static_positions = static_positions
+        self._attach_grasped_objects = attach_grasped_objects
         self._reset_called = False
         self._prev_ee_velocity = None
         self._enable_path_observations = False
@@ -73,8 +75,6 @@ class TaskEnvironment(object):
         return self._task.variation_count()
 
     def reset(self) -> (List[str], Observation):
-        logging.info('Resetting task: %s' % self._task.get_name())
-
         self._scene.reset()
         try:
             desc = self._scene.init_episode(
@@ -86,16 +86,7 @@ class TaskEnvironment(object):
                 'happen, please raise an issues on this task.'
                 % self._task.get_name()) from e
 
-        ctr_loop = self._robot.arm.joints[0].is_control_loop_enabled()
-        locked = self._robot.arm.joints[0].is_motor_locked_at_zero_velocity()
-        self._robot.arm.set_control_loop_enabled(False)
-        self._robot.arm.set_motor_locked_at_zero_velocity(True)
-
         self._reset_called = True
-
-        self._robot.arm.set_control_loop_enabled(ctr_loop)
-        self._robot.arm.set_motor_locked_at_zero_velocity(locked)
-
         # Returns a list of descriptions and the first observation
         return desc, self._scene.get_observation()
 
@@ -302,7 +293,7 @@ class TaskEnvironment(object):
                 done = self._robot.gripper.actuate(ee_action, velocity=0.2)
                 self._pyrep.step()
                 self._task.step()
-            if ee_action == 0.0:
+            if ee_action == 0.0 and self._attach_grasped_objects:
                 # If gripper close action, the check for grasp.
                 for g_obj in self._task.get_graspable_objects():
                     self._robot.gripper.grasp(g_obj)
@@ -311,8 +302,9 @@ class TaskEnvironment(object):
                 self._robot.gripper.release()
 
         success, terminate = self._task.success()
-        reward = self._task.reward()
-        return self._scene.get_observation(), float(success) + reward, terminate
+        task_reward = self._task.reward()
+        reward = float(success) if task_reward is None else task_reward
+        return self._scene.get_observation(), reward, terminate
 
     def enable_path_observations(self, value: bool) -> None:
         if (self._action_mode.arm != ArmActionMode.DELTA_EE_POSE_PLAN_WORLD_FRAME and
@@ -351,10 +343,10 @@ class TaskEnvironment(object):
                 self._task.get_name(), self._obs_config)
         else:
             ctr_loop = self._robot.arm.joints[0].is_control_loop_enabled()
-            self._robot.arm.joints[0].set_control_loop_enabled(True)
+            self._robot.arm.set_control_loop_enabled(True)
             demos = self._get_live_demos(
                 amount, callable_each_step, max_attempts)
-            self._robot.arm.joints[0].set_control_loop_enabled(ctr_loop)
+            self._robot.arm.set_control_loop_enabled(ctr_loop)
         return demos
 
     def _get_live_demos(self, amount: int,
