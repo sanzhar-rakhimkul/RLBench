@@ -10,7 +10,19 @@ from pyrep.const import RenderMode
 ENV_SUPPORT = {'reach_target-state-v0': 100, 'reach_target-vision-v0':100,
                'reach_target_simple-state-v0': 100, 'reach_target_simple-vision-v0':100,
                'reach_target_harder-state-v0': 100, 'reach_target_harder-vision-v0':100,
-               'push_button-state-v0': 100, 'push_button-vision-v0': 100}
+               'push_button-state-v0': 100, 'push_button-vision-v0': 100,
+               'pick_and_lift-state-v0': 100, 'pick_and_lift-vision-v0': 100,
+               'slide_block_to_target-state-v0': 150, 'slide_block_to_target-v0': 100,
+               'pick_up_cup-state-v0': 100, 'pick_up_cup-vision-v0': 100}
+ENV_OBS_SHAPE = dict(
+    ReachTarget=3 + 3,
+    ReachTargetSimple=3 + 3,
+    ReachTargetHarder=3 + 3,
+    PushButton=3 + 3,
+    SlideBlockToTarget=3 + 3 + 3,
+    PickUpCup=3 + 3,
+    PickAndLift=3 + 3,
+)
 CAMERA_SUPPORT = ['left_shoulder_rgb', 'right_shoulder_rgb', 'wrist_rgb', 'front_rgb']
 RENDER_MODE = RenderMode.OPENGL
 
@@ -142,6 +154,7 @@ class RLBenchWrapper_v1(core.Env):
         self.xy_tolerance = xy_tolerance
         self._allow_finish_soon = allow_finish_soon
         self.force_orientation = True
+        self.allow_rotation = False
         self.tool_target_quat = None
         np.random.seed(seed)
 
@@ -179,9 +192,9 @@ class RLBenchWrapper_v1(core.Env):
                 obs_type = np.uint8
         else:
             if self._use_gripper:
-                shape = [3 + 3 + 1]     # Current tool's position + target's position
+                shape = [ENV_OBS_SHAPE[self.env.task._task.__class__.__name__] + 1]     # Current tool's position + target's position
             else:
-                shape = [3 + 3]
+                shape = [ENV_OBS_SHAPE[self.env.task._task.__class__.__name__]]
             obs_low, obs_high = -np.inf, np.inf
             obs_type = np.float32
         self._observation_space = spaces.Box(
@@ -189,7 +202,14 @@ class RLBenchWrapper_v1(core.Env):
         )
 
         # Create action space
-        shape = (self.env.action_space.shape[0] - 4,) if use_gripper else (self.env.action_space.shape[0] - 5,)
+        if self.allow_rotation:
+            # 3-dim vector for position, 1 for rotation angle, 1 for gripper if any
+            shape = (self.env.action_space.shape[0] - 4 + 1,) if use_gripper else \
+                (self.env.action_space.shape[0] - 5 + 1,)
+        else:
+            # 3-dim vector for position, 1 for gripper if any
+            shape = (self.env.action_space.shape[0] - 4,) if use_gripper else \
+                (self.env.action_space.shape[0] - 5,)
         self._action_space = spaces.Box(
             low=-1.0, high=1.0, shape=shape, dtype=np.float32
         )
@@ -241,14 +261,18 @@ class RLBenchWrapper_v1(core.Env):
     @property
     def _robot_state_low_dim(self):
         # Structure of get_low_dim_data for:
-        # Reaching:
+        # Reaching (40):
         #   gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
         #   gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
         #   task_low_dim_state (3)
-        # Push Button:
+        # Push Button (80):
         #   gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
         #   gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
         #   task_low_dim_state (43)
+        # SlideBlockToTarget (72):
+        #   gripper_open (1), joint_velocities (7), joint_positions (7), joint_forces (7),
+        #   gripper_pose (7), gripper_joint_positions (2), gripper_touch_forces (6),
+        #   task_low_dim_state (35)
         return self.env.task._scene.get_observation().get_low_dim_data().copy()
 
     def reset(self):
@@ -259,7 +283,7 @@ class RLBenchWrapper_v1(core.Env):
         # This loop for move gripper to initial position
         while True:
             del_pos = self._reset_tool_pos - self._current_tool_position
-            act = self._make_full_action(del_pos, 0.05, False)
+            act = self._make_full_action(pos=del_pos, gripper=False,  scale=0.02, check_valid=False)
             _, _, done, _ = self.env.step(act)
             if done:
                 self.env.reset()
@@ -272,7 +296,8 @@ class RLBenchWrapper_v1(core.Env):
     def step(self, act):
         pos = act[:3]
         gripper = act[-1] if self._use_gripper else None
-        action = self._make_full_action(pos, gripper, self._action_scale)
+        rot = act[3] if self.allow_rotation else None
+        action = self._make_full_action(pos=pos, rot=rot, gripper=gripper, scale=self._action_scale)
 
         obs, done, info = None, False, {}
         for _ in range(self._frame_skip):
@@ -310,6 +335,16 @@ class RLBenchWrapper_v1(core.Env):
         elif self.env.task._task.__class__.__name__ == 'PushButton':
             reward = -np.linalg.norm(self.env.task._task.target_button.get_position() -
                                      self.env.task._task.robot.arm.get_tip().get_position(), ord=2)
+            total_rew = reward
+        elif self.env.task._task.__class__.__name__ == 'SlideBlockToTarget':
+            obs_full = self._robot_state_low_dim
+            box_pos = obs_full[44:47]
+            target = obs_full[51:54]
+            total_rew = -np.linalg.norm(box_pos[:2] - target[:2], ord=2)
+        elif self.env.task._task.__class__.__name__ == 'PickUpCup':
+            # TODO: Define reward for PickUpCup
+            obs_full = self._robot_state_low_dim
+            reward = 0.
             total_rew = reward
         else:
             raise NotImplementedError('Not support compute reward for environment.')
@@ -350,7 +385,7 @@ class RLBenchWrapper_v1(core.Env):
 
         return ws_min, ws_max
 
-    def _make_full_action(self, pos, gripper=None, scale=1.0, check_valid=True):
+    def _make_full_action(self, pos, rot=None, gripper=None, scale=1.0, check_valid=True):
         pos *= scale
         if check_valid:
             pos = self._check_workspace_valid(pos)
@@ -363,11 +398,18 @@ class RLBenchWrapper_v1(core.Env):
                 gripper = np.array([0])     # Close
         else:
             gripper = np.array([0])     # Close
-        if self.force_orientation:
-            quat = self._compute_delta_orientation(self.tool_target_quat)
-            quat = np.array(quat)
+
+        if self.allow_rotation and rot is not None:
+            assert -1.0 <= rot <= 1.0, "Rotation must be normalized in range [-1, 1]"
+            quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=rot*np.pi)
+            dqw, dqx, dqy, dqz = quat
+            quat = np.array([dqx, dqy, dqz, dqw])
         else:
-            quat = np.array([0, 0, 0, 1])
+            if self.force_orientation:
+                quat = self._compute_delta_orientation(self.tool_target_quat)
+                quat = np.array(quat)
+            else:
+                quat = np.array([0, 0, 0, 1])
         action_full = np.concatenate((pos, quat, gripper))
         return action_full
 
@@ -396,8 +438,10 @@ class RLBenchWrapper_v1(core.Env):
             if not self._pixel_normalize:
                 obs = (obs * 255).astype(np.uint8).copy()
         else:
+            # Robot low-dimensional state
             obs_full = self._robot_state_low_dim
             cur_tool_pos = obs_full[22:25].copy()
+            # Task low-dimensional state
             if self.env.task._task.__class__.__name__ in ['ReachTarget', 'ReachTargetSimple', 'ReachTargetHarder']:
                 target_pos = obs_full[-3:].copy()
                 obs = np.concatenate((cur_tool_pos, target_pos))
@@ -410,6 +454,12 @@ class RLBenchWrapper_v1(core.Env):
                 if self._use_gripper:
                     gripper_state = obs_full[0, None]
                     obs = np.concatenate((obs, gripper_state))
+            elif self.env.task._task.__class__.__name__ == 'SlideBlockToTarget':
+                box_pos = obs_full[44:47]
+                target = obs_full[51:54]
+                obs = np.concatenate((cur_tool_pos, box_pos, target))
+            elif self.env.task._task.__class__.__name__ == 'PickUpCup':
+                obs = np.zeros(10)
             else:
                 raise NotImplementedError('Not support compute reward for environment.')
         return obs.copy()
